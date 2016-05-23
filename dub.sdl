@@ -1,0 +1,8 @@
+name "linalg"
+description "syntax sugar for cblas"
+authors "Vlad Levenfeld"
+copyright "Copyright © 2016, Vlad Levenfeld"
+license "MIT"
+dependency "cblas" version="~>0.1.0"
+targetType "sourceLibrary"
+buildRequirements "silenceDeprecations"
