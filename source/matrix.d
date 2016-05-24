@@ -1,6 +1,6 @@
 module linalg.matrix;
 
-void demo()
+@("DEMO") unittest
 {
 	auto m1 = Mat!(3,3)(
 		1, 2, 3,
@@ -80,7 +80,7 @@ struct Matrix(A, uint m, uint n)
 		return typeof(return)(this[].transposed);
 	}
 
-	this(A a)
+	static if(m*n > 1) this(A a)
 	{
 		data[] = a;
 	}
@@ -140,7 +140,7 @@ struct Matrix(A, uint m, uint n)
 				return binary;
 		}
 
-		this.opIndexAssign(assignedValue, indices);
+		return this.opIndexAssign(assignedValue, indices);
 	}
 	auto ref opIndexAssign(B, I...)(B that, I indices)
 	{
@@ -274,9 +274,18 @@ struct SubMatrix(A, uint m, uint n)
 		this.cols = ans.cols;
 		return this = ans;
 	}
-	auto opOpAssign(string op : "*", uint k, uint p)(Matrix!(A, k, p) that)
+	auto opOpAssign(string op : "+", uint k, uint p)(SubMatrix!(A, k, p) that)
 	{
-		this *= that[];
+		return this.slice[] += that.slice[];
+	}
+	auto opOpAssign(string op, uint k, uint p)(Matrix!(A, k, p) that)
+	{
+		static if(op == "*")
+			this *= that[];
+		else static if(op == "+")
+			this.slice[] += that[].slice;
+		else static assert(0);
+
 		return this;
 	}
 
