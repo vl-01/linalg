@@ -32,7 +32,7 @@ module linalg.matrix;
 
 	auto u = Vec!2(7,8);
 
-	//assert(u + v == Vec!2(7,9)); TODO matrix/vector addition
+	assert(u + v == Vec!2(7,9));
 
 	auto dot = v.transposed*u;
 	assert(dot[].shape == [1,1]);
