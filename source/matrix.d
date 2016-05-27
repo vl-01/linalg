@@ -37,6 +37,8 @@ void demo()
 
 	assert(m * m.inverted == m.identity);
 
+	assert(m.transposed == m^^T);
+
 	m = m.init;
 	assert(m.vConcat(2*m) == Mat!(4,2)(
 		1, 0,
@@ -70,6 +72,11 @@ alias Matrix(uint m, uint n) = StaticMatrix!(float, m, n);
 
 alias Vec = Vector;
 alias Mat = Matrix;
+
+Vec!(CommonType!(A, float), A.length) vec(A...)(A a)
+{
+	return typeof(return)(a);
+}
 
 struct StaticMatrix(A, uint m, uint n)
 {
@@ -151,12 +158,12 @@ struct StaticMatrix(A, uint m, uint n)
 		return result;
 	}
 
-	auto opOpAssign(string op: `/`)(const(StaticMatrix) that) if(is(typeof(that.inverted)))
+	auto opOpAssign(string op: `/`)(const(StaticMatrix!(A,n,n)) that) if(is(typeof(that.inverted)))
 	{
 		this = this / that;
 		return this;
 	}
-	auto opBinary(string op : `/`)(const(StaticMatrix) that) const if(is(typeof(that.inverted)))
+	auto opBinary(string op : `/`)(const(StaticMatrix!(A,n,n)) that) const if(is(typeof(that.inverted)))
 	{
 		return this * that.inverted;
 	}
@@ -177,6 +184,11 @@ struct StaticMatrix(A, uint m, uint n)
 		return this * a;
 	}
 
+	auto opBinary(string op: `^^`)(MatrixTransposeSymbol) const
+	{
+		return this.transposed;
+	}
+
 	auto opEquals(const(StaticMatrix) that)
 	{
 		return this.data == that.data;
@@ -191,6 +203,8 @@ struct StaticMatrix(A, uint m, uint n)
 		return this[].to!string;
 	}
 }
+struct MatrixTransposeSymbol{} // idea from https://github.com/aestiff/tcbuilder/blob/master/source/app.d
+enum T = MatrixTransposeSymbol();
 
 auto matrixMultiply(A,B,C)(Slice!(2,A) a, Slice!(2,B) b, Slice!(2,C) c)
 {
@@ -292,11 +306,7 @@ auto dConcat(Slices...)(Slices slices) if(Slices.length > 1)
 	auto rows = staticMap!(rowsOf, eachSlice).only.sum;
 	auto cols = staticMap!(colsOf, eachSlice).only.sum;
 
-	alias SliceType(Slice) = typeof(Slice.init[]);
-
-	alias E = Unqual!(CommonType!(staticMap!(DeepElementType, 
-		staticMap!(SliceType, Slices)
-	)));
+	alias E = Unqual!(CommonType!(staticMap!(DeepElementType, Slices)));
 
 	auto workspace = (new E[rows*cols]).sliced(rows, cols);
 	workspace[] = 0;
