@@ -245,22 +245,15 @@ in{
 	
 	alias B = Unqual!(DeepElementType!(Slice!(2,A)));
 
-	static B[] workspace;
-	workspace.length = max(
-		workspace.length,
-		a.elementsCount
-	);
+	auto workspace = new B[a.elementsCount];
 
 	std.algorithm.copy(a.transposed.byElement, workspace);
 
 	invert(MatrixView!(B)(
-		workspace[0..a.elementsCount], a.length!0,
+		workspace, a.length!0,
 	));
 
-	return workspace[0..a.elementsCount]
-		.dup.sliced(a.length!0, a.length!1)
-		.transposed
-		;
+	return workspace.sliced(a.length!0, a.length!1).transposed;
 }
 
 auto vConcat(Slices...)(Slices slices) if(Slices.length > 1)
@@ -273,7 +266,7 @@ in{
 
 	alias eachSlice = staticIota!(0, Slices.length);
 
-	auto rows = [staticMap!(sideLengthOf, eachSlice)].sum;
+	auto rows = staticMap!(sideLengthOf, eachSlice).only.sum;
 	auto cols = slices[0].length!1;
 
 	return staticMap!(byElementOf, eachSlice)
@@ -288,6 +281,39 @@ auto hConcat(Slices...)(Slices slices) if(Slices.length > 1)
 	{ return slices[i].transposed; }
 
 	return vConcat(staticMap!(transpose, eachSlice)).transposed;
+}
+auto dConcat(Slices...)(Slices slices) if(Slices.length > 1)
+{
+	alias eachSlice = staticIota!(0, Slices.length);
+
+	auto rowsOf(uint i)(){ return slices[i].length!0; }
+	auto colsOf(uint i)(){ return slices[i].length!1; }
+
+	auto rows = staticMap!(rowsOf, eachSlice).only.sum;
+	auto cols = staticMap!(colsOf, eachSlice).only.sum;
+
+	alias SliceType(Slice) = typeof(Slice.init[]);
+
+	alias E = Unqual!(CommonType!(staticMap!(DeepElementType, 
+		staticMap!(SliceType, Slices)
+	)));
+
+	auto workspace = (new E[rows*cols]).sliced(rows, cols);
+	workspace[] = 0;
+
+	size_t i, j;
+	foreach(slice; slices)
+	{
+		auto i1 = i + slice.length!0;
+		auto j1 = j + slice.length!1;
+
+		workspace[i..i1, j..j1] = slice[];
+
+		i = i1;
+		j = j1;
+	}
+
+	return workspace;
 }
 
 A[m*n] generateIdentityMatrixData(A, uint m, uint n)()
