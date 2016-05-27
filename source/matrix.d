@@ -2,26 +2,52 @@ module linalg.matrix;
 
 void demo()
 {
-	StaticMatrix!(float, 2, 2) m, n;
+	StaticMatrix!(float, 2, 2) m;
 
-	writeln(m);
-	writeln(-m);
-	writeln(+m);
-	writeln(m += m);
-	writeln(m + m);
-	writeln(m - m);
-	writeln(m / m);
+	assert(m == m.identity);
+	assert(-m == m * (-1));
+	assert(+m == m);
+	assert((m += m) == 2 * m.identity);
+	assert(m + m == 2 * m);
+	assert(m - m == typeof(m)(0));
+	assert(m / m == m.identity);
 
-	writeln(m * m);
+	assert(m * m == 4 * m.identity);
 
-	writeln(m *= m);
+	assert((m *= m) == 4 * m.identity);
 
-	writeln(m *= 2);
-	writeln(m - 6);
+	assert((m *= 2) == 8 * m.identity);
+
+	assert(m - 6 == [
+		2, -6,
+		-6, 2
+	].sliced(2,2));
 
 	m[0..1, 0..1] = m[1..2, 0..1];
 
-	writeln(m);
+	assert(m == [
+		0, 0, 
+		0, 8
+	].sliced(2,2));
+
+	m[] = [
+		7, -2,
+		3, 5,
+	].sliced(2,2);
+
+	assert(m * m.inverted == m.identity);
+
+	m = m.init;
+	assert(m.vConcat(2*m) == Mat!(4,2)(
+		1, 0,
+		0, 1,
+		2, 0,
+		0, 2,
+	));
+	assert(m.hConcat(2*m) == Mat!(2,4)(
+		1, 0, 2, 0,
+		0, 1, 0, 2,
+	));
 }
 
 import std.stdio;
@@ -32,7 +58,10 @@ import std.experimental.ndslice;
 import std.experimental.logger;
 import std.typecons;
 import std.meta;
+import std.traits;
 import cblas;
+import scid.linalg;
+import scid.matrix;
 
 alias Vector(uint n) = Vector!(float, n);
 alias Vector(A, uint n) = StaticMatrix!(A, n, 1);
@@ -47,14 +76,25 @@ struct StaticMatrix(A, uint m, uint n)
 	A[m*n] data = generateIdentityMatrixData!(float, m, n);
 	enum identity = StaticMatrix.init;
 
-	StaticMatrix!(A,n,m) transposed()
+	enum rows = m;
+	enum cols = n;
+
+	StaticMatrix!(A,n,m) transposed() const
 	{
 		return typeof(return)(this[].transposed);
 	}
 
+	static if(m == n)
+		StaticMatrix!(A,n,m) inverted() const
+		{
+			return typeof(return)(this.sliced.inverted);
+		}
+
 	auto sliced() const { return data[].sliced(m,n); }
 	auto sliced(){ return data[].sliced(m,n); }
 	alias sliced this;
+
+	@disable A front();
 
 	this(B)(Slice!(2, B) slice)
 	{
@@ -74,9 +114,9 @@ struct StaticMatrix(A, uint m, uint n)
 		this[].opIndexUnary!op;
 		return this;
 	}
-	auto opUnary(string op)() if(op == `+` || op == `-`)
+	auto opUnary(string op)() const if(op == `+` || op == `-`)
 	{
-		auto a = this;
+		auto a = cast()this;
 
 		static if(op == `-`)
 			a[] *= -1;
@@ -84,37 +124,41 @@ struct StaticMatrix(A, uint m, uint n)
 		return a;
 	}
 
-	auto opOpAssign(string op, B)(Slice!(2, B) that) if(op == `+` || op == `-` || op == `/`)
+	auto opOpAssign(string op, B)(Slice!(2, B) that) if(op == `+` || op == `-`)
 	{
 		this[].opIndexOpAssign!op(that);
 		return this;
 	}
-	auto opBinary(string op, B)(Slice!(2, B) that) if(op == `+` || op == `-` || op == `/`)
+	auto opBinary(string op, B)(Slice!(2, B) that) const if(op == `+` || op == `-`)
 	{
-		auto a = this;
+		auto a = cast()this;
 		a.opOpAssign!op(that);
-
-		static if(op == `/`)
-			foreach(i, row; that.enumerate)
-				foreach(j, el; row.enumerate)
-					if(el == 0)
-						a[i,j] = 0;
 
 		return a;
 	}
 
-	auto opOpAssign(string op: `*`)(StaticMatrix that)
+	auto opOpAssign(string op: `*`)(const(StaticMatrix) that)
 	{
 		this = this * that;
 		return this;
 	}
-	auto opBinary(string op : `*`, uint k)(StaticMatrix!(A,n,k) that)
+	auto opBinary(string op : `*`, uint k)(const(StaticMatrix!(A,n,k)) that) const
 	{
 		StaticMatrix!(A,m,k) result;
 
-		this.matrixMultiply(that, result);
+		this[].matrixMultiply(that[], result[]);
 
 		return result;
+	}
+
+	auto opOpAssign(string op: `/`)(const(StaticMatrix) that) if(is(typeof(that.inverted)))
+	{
+		this = this / that;
+		return this;
+	}
+	auto opBinary(string op : `/`)(const(StaticMatrix) that) const if(is(typeof(that.inverted)))
+	{
+		return this * that.inverted;
 	}
 
 	auto opOpAssign(string op)(A a)
@@ -122,11 +166,24 @@ struct StaticMatrix(A, uint m, uint n)
 		this[].opIndexOpAssign!op(a);
 		return this;
 	}
-	auto opBinary(string op)(A a)
+	auto opBinary(string op)(A a) const
 	{
-		auto b = this;
+		auto b = cast()this;
 		b.opOpAssign!op(a);
 		return b;
+	}
+	auto opBinaryRight(string op)(A a) const if(op == `*`)
+	{
+		return this * a;
+	}
+
+	auto opEquals(const(StaticMatrix) that)
+	{
+		return this.data == that.data;
+	}
+	auto opEquals(B)(Slice!(2,B) that)
+	{
+		return this.sliced == that;
 	}
 
 	string toString() const
@@ -135,7 +192,7 @@ struct StaticMatrix(A, uint m, uint n)
 	}
 }
 
-auto matrixMultiply(A)(Slice!(2,A*) a, Slice!(2,A*) b, Slice!(2,A*) c)
+auto matrixMultiply(A,B,C)(Slice!(2,A) a, Slice!(2,B) b, Slice!(2,C) c)
 {
 	assert(a.length!1 == b.length!0);
 
@@ -148,20 +205,20 @@ auto matrixMultiply(A)(Slice!(2,A*) a, Slice!(2,A*) b, Slice!(2,A*) c)
 	if(m == 1 && n == 1)
 	{
 		c[0,0] = dot(
-			n, a.ptr, 1, b.ptr, 1
+			n, &(cast()a)[0,0], 1, &(cast()b)[0,0], 1
 		);
 	}
-	else if(a.isVector || b.isVector) 
+	else if(a.length!0 == 1 || a.length!1 == 1 || b.length!0 == 1 || b.length!1 == 1) 
 	{
 		gemv(
 			CBLAS_ORDER.RowMajor,
 			CBLAS_TRANSPOSE.NoTrans, 
 			m, n,
 			1,
-			a.ptr, n,
-			b.ptr, k,
+			&(cast()a)[0,0], n,
+			&(cast()b)[0,0], k,
 			0,
-			c.ptr, k,
+			&(cast()c)[0,0], k,
 		);
 	}
 	else
@@ -172,28 +229,67 @@ auto matrixMultiply(A)(Slice!(2,A*) a, Slice!(2,A*) b, Slice!(2,A*) c)
 			CBLAS_TRANSPOSE.NoTrans, 
 			m, k, n,
 			1,
-			a.ptr, n,
-			b.ptr, k,
+			&(cast()a)[0,0], n,
+			&(cast()b)[0,0], k,
 			0,
-			c.ptr, k,
+			&(cast()c)[0,0], k,
 		);
 	}
 
 	return c;
 }
+auto inverted(A)(Slice!(2,A) a)
+in{
+	assert(a.length!0 == a.length!1);
+}body{
+	
+	alias B = Unqual!(DeepElementType!(Slice!(2,A)));
 
-// traits/predicates
-enum isMatrix(M) = is(M == StaticMatrix!A, A...);
-bool isVector(V)(V v)
-{
-	return (v.length!0 == 1 || v.length!1 == 1) && !is(typeof(v.length!2));
+	static B[] workspace;
+	workspace.length = max(
+		workspace.length,
+		a.elementsCount
+	);
+
+	std.algorithm.copy(a.transposed.byElement, workspace);
+
+	invert(MatrixView!(B)(
+		workspace[0..a.elementsCount], a.length!0,
+	));
+
+	return workspace[0..a.elementsCount]
+		.dup.sliced(a.length!0, a.length!1)
+		.transposed
+		;
 }
 
-// utils
-auto ptr(A, uint n)(Slice!(n, A) slice)
-{
-	return &slice.byElement[0];
+auto vConcat(Slices...)(Slices slices) if(Slices.length > 1)
+in{
+	foreach(s; slices)
+		assert(s.length!1 == slices[0].length!1);
+}body{
+	auto sideLengthOf(uint i)(){ return slices[i].length!0; }
+	auto byElementOf(uint i)(){ return slices[i][].byElement; }
+
+	alias eachSlice = staticIota!(0, Slices.length);
+
+	auto rows = [staticMap!(sideLengthOf, eachSlice)].sum;
+	auto cols = slices[0].length!1;
+
+	return staticMap!(byElementOf, eachSlice)
+		.chain.array.sliced(rows, cols)
+		;
 }
+auto hConcat(Slices...)(Slices slices) if(Slices.length > 1)
+{
+	alias eachSlice = staticIota!(0, Slices.length);
+
+	auto transpose(uint i)()
+	{ return slices[i].transposed; }
+
+	return vConcat(staticMap!(transpose, eachSlice)).transposed;
+}
+
 A[m*n] generateIdentityMatrixData(A, uint m, uint n)()
 {
 	typeof(return) data;
