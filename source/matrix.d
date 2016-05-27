@@ -78,10 +78,19 @@ Vec!(CommonType!(A, float), A.length) vec(A...)(A a)
 	return typeof(return)(a);
 }
 
+template identityMatrixData(A, uint n)
+{
+	alias Repeat(uint m, uint val) = AliasSeq!(Repeat!(m-1, val), val);
+	alias Repeat(uint m : 0, uint _) = AliasSeq!();
+
+	alias row(uint i) = AliasSeq!(Repeat!(i, 0), 1, Repeat!(n-i-1, 0));
+
+	alias identityMatrixData = staticMap!(row, staticIota!(0,n));
+}
+
 struct StaticMatrix(A, uint m, uint n)
 {
-	A[m*n] data = generateIdentityMatrixData!(float, m, n);
-	enum identity = StaticMatrix.init;
+	A[m*n] data = 0;
 
 	enum rows = m;
 	enum cols = n;
@@ -96,6 +105,9 @@ struct StaticMatrix(A, uint m, uint n)
 		{
 			return typeof(return)(this.sliced.inverted);
 		}
+
+	static if(m == n)
+		enum identity = StaticMatrix(identityMatrixData!(float, n));
 
 	auto sliced() const { return data[].sliced(m,n); }
 	auto sliced(){ return data[].sliced(m,n); }
@@ -324,15 +336,4 @@ auto dConcat(Slices...)(Slices slices) if(Slices.length > 1)
 	}
 
 	return workspace;
-}
-
-A[m*n] generateIdentityMatrixData(A, uint m, uint n)()
-{
-	typeof(return) data;
-	data[] = 0;
-
-	foreach(i; staticIota!(0, min(m,n)))
-		data[n*i + i] = 1;
-
-	return data;
 }
